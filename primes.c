@@ -59,7 +59,6 @@ void queue_init(CircularQueue **q, unsigned int capacity) // TO DO: change retur
  
 //------------------------------------------------------------------------------------------ 
 // Inserts 'value' at the tail of queue 'q' 
- 
 void queue_put(CircularQueue *q, QueueElem value) 
 {
 	sem_wait((sem_t *) &q->empty);
@@ -71,8 +70,7 @@ void queue_put(CircularQueue *q, QueueElem value)
 } 
  
 //------------------------------------------------------------------------------------------ 
-// Removes element at the head of queue 'q' and returns its 'value' 
- 
+// Removes element at the head of queue 'q' and returns its 'value'
 QueueElem queue_get(CircularQueue *q) 
 {	
 	sem_wait((sem_t *) &q->full);
@@ -89,7 +87,6 @@ QueueElem queue_get(CircularQueue *q)
 //------------------------------------------------------------------------------------------ 
 // Frees space allocated for the queue elements and auxiliary management data 
 // Must be called when the queue is no more needed 
- 
 void queue_destroy(CircularQueue *q) 
 { 
 	free(q->v);
@@ -149,8 +146,8 @@ int main(int argc, char *argv[]) {
 	sem_wait(&primeCalculation);
 
 	int *pt;
-	key = ftok("proc1", 0); /* usa a mesma key */ 
-	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
+	key = ftok("proc1", 0); /* uses the same key proc1 */ 
+	shmid = shmget(key, 0, 0); /* only uses, it doesn't create */ 
 	pt = (int *) shmat(shmid, 0, 0);
 	
 	printf("All primes: \n\n");
@@ -169,8 +166,8 @@ void *initial_thread(void *arg)
 	int shmid;
 	int *pt;
 
-	key = ftok("proc1", 0); /* usa a mesma key */ 
-	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
+	key = ftok("proc1", 0);
+	shmid = shmget(key, 0, 0);
 	pt = (int *) shmat(shmid, 0, 0);
 
 	//sets the next prime pointer to the first available position
