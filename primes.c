@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
 	char *data;
 
 	key = ftok("proc1", 0);
-	if ((shmid = shmget(key, neededSpaceAproximation, IPC_CREAT)) == -1) {
+	if ((shmid = shmget(key, neededSpaceAproximation, S_IRUSR | S_IWUSR)) == -1) {
     	perror("shmget");
     	exit(1);
     }
@@ -170,7 +170,7 @@ void *initial_thread(void *arg)
 	shmid = shmget(key, 0, 0);
 	pt = (int *) shmat(shmid, 0, 0);
 
-	//sets the next prime pointer to the first available position
+	//sets pt[0] as the next prime pointer to the first available position
 	pt[0]=1;
 
 	//sets the first prime as 2
