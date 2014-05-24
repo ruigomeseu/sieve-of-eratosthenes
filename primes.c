@@ -18,8 +18,10 @@
 typedef unsigned long QueueElem;
 
 sem_t primeCalculation;
+
 int maxNumber = 0;
- 
+int threadsRunning = 0;
+
 void *initial_thread(void *arg);
 void *filter_thread(void *arg);
 
@@ -27,7 +29,6 @@ void *filter_thread(void *arg);
 //------------------------------------------------------------------------------------------ 
 // Struct for representing a "circular queue" 
 // Space for the queue elements will be allocated dinamically by queue_init() 
- 
 typedef struct 
 { 
 	QueueElem *v; // pointer to the queue buffer unsigned int capacity; // queue capacity 
@@ -43,18 +44,28 @@ typedef struct
 // Allocates space for circular queue 'q' having 'capacity' number of elements 
 // Initializes semaphores & mutex needed to implement the producer-consumer paradigm 
 // Initializes indexes of the head and tail of the queue 
-// TO DO BY STUDENTS: ADD ERROR TESTS TO THE CALLS & RETURN a value INDICATING (UN)SUCESS 
- 
-void queue_init(CircularQueue **q, unsigned int capacity) // TO DO: change return value 
+// Returns 0 for success, 1 for failed queue initialization
+int queue_init(CircularQueue **q, unsigned int capacity) // TO DO: change return value 
 { 
-	*q = (CircularQueue *) malloc(sizeof(CircularQueue)); 
+	*q = (CircularQueue *) malloc(sizeof(CircularQueue));
+	if(q == NULL) {
+		return 1;
+	}
+
 	sem_init(&((*q)->empty), 0, capacity); 
 	sem_init(&((*q)->full), 0, 0); 
-	pthread_mutex_init(&((*q)->mutex), NULL); 
-	(*q)->v = (QueueElem *) malloc(capacity * sizeof(QueueElem)); 
+	pthread_mutex_init(&((*q)->mutex), NULL);
+
+	(*q)->v = (QueueElem *) malloc(capacity * sizeof(QueueElem));
+	if((*q)->v == NULL) {
+		return 1;
+	}
+
 	(*q)->capacity = capacity; 
 	(*q)->first = 0; 
-	(*q)->last = 0; 
+	(*q)->last = 0;
+
+	return 0;
 } 
  
 //------------------------------------------------------------------------------------------ 
@@ -62,31 +73,34 @@ void queue_init(CircularQueue **q, unsigned int capacity) // TO DO: change retur
 void queue_put(CircularQueue *q, QueueElem value) 
 {
 	sem_wait((sem_t *) &q->empty);
+	pthread_mutex_lock(&q->mutex);
 
     q->v[q->last] = value;
 	q->last = (q->last+1)%q->capacity;
 
+	pthread_mutex_unlock(&q->mutex);
 	sem_post((sem_t *) &q->full);
 } 
  
 //------------------------------------------------------------------------------------------ 
-// Removes element at the head of queue 'q' and returns its 'value'
+// Removes element at the head of queue 'q' and returns its 'value' 
 QueueElem queue_get(CircularQueue *q) 
 {	
 	sem_wait((sem_t *) &q->full);
-	
-	QueueElem value;
+	pthread_mutex_lock(&q->mutex);
 
+	QueueElem value;
 	value = q->v[q->first];
 	q->first = (q->first+1)%q->capacity;
 
+	pthread_mutex_unlock(&q->mutex);
 	sem_post((sem_t *) &q->empty);
 	return value;
 } 
  
 //------------------------------------------------------------------------------------------ 
 // Frees space allocated for the queue elements and auxiliary management data 
-// Must be called when the queue is no more needed 
+// Must be called when the queue is no longer needed
 void queue_destroy(CircularQueue *q) 
 { 
 	free(q->v);
@@ -95,50 +109,48 @@ void queue_destroy(CircularQueue *q)
 int main(int argc, char *argv[]) {
 
 	if(argc != 2) {
-		printf("Incorrect number of arguments\n");
+		printf("Usage: ./primes <number>\n");
 		exit(-1);
 	}
 
 	maxNumber = strtol(argv[1], NULL, 0);
 
 	double neededSpace = 1.2 * (maxNumber / log(maxNumber)) + 1;
-	int neededSpaceAproximation = ceil(neededSpace);
-
-	int allNumbers[maxNumber-1];
+	long neededSpaceAproximation = ceil(neededSpace);
 
 	sem_init(&primeCalculation, 0, 0); 
-
-	//fill in the numbers array with all numbers from 2...n
-	int i;
-	for(i=0; i<=sizeof(allNumbers)/sizeof(allNumbers[0]); i++) {
-		allNumbers[i] = i+2;
-	}
 
 	key_t key; 
 	int shmid;
 	char *data;
 
-	key = ftok("proc1", 0);
-	if ((shmid = shmget(key, neededSpaceAproximation, S_IRUSR | S_IWUSR)) == -1) {
+	//allocates the required space on a shared memory segment
+	key = ftok("primes", 0);
+	if ((shmid = shmget(key, neededSpaceAproximation, IPC_CREAT | IPC_EXCL | SHM_R | SHM_W)) == -1) {
     	perror("shmget");
     	exit(1);
     }
 
-    /* attach to the segment to get a pointer to it: */
-  	data = (char *) shmat(shmid, NULL, 0);
+    // attach to the segment to get a pointer to it //
+  	data = (char *) shmat(shmid, 0, 0);
     if (data == (char *) -1) {
     	perror("shmat");
     	exit(1);
     }
+
+    //reset the shared memory
+    int i = 0;
     for(i=0; i<=data[0]; i++) {
 		data[i] = 0;
 	}
 
+	//closes the pointer
     if (shmdt((char*)data) == -1) {
         perror("shmdt1");
-		exit(1);
+		exit(1);	
 	}
 
+	//creates the initial thread
 	pthread_t initialThread;
 	pthread_create(&initialThread, NULL, initial_thread, NULL);
 	pthread_join(initialThread, NULL); 
@@ -146,16 +158,25 @@ int main(int argc, char *argv[]) {
 	sem_wait(&primeCalculation);
 
 	int *pt;
-	key = ftok("proc1", 0); /* uses the same key proc1 */ 
-	shmid = shmget(key, 0, 0); /* only uses, it doesn't create */ 
+	key = ftok("primes", 0); /* usa a mesma key */ 
+	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 	
-	printf("All primes: \n\n");
+	printf("All calculated primes up to %d: \n\n", maxNumber);
 	for(i=0; i<=pt[0]; i++) {
-		printf("%d: %d\n", i, pt[i]);
+		printf("%d\n", pt[i]);
 	}
 
-	shmdt(pt);
+	//clears the shared memory segment
+	if (shmctl (shmid, IPC_RMID, 0)) {
+        perror("shmctl");
+		exit(1);	
+	}
+
+	if (shmdt((char*)pt) == -1) {
+        perror("shmdt1");
+		exit(1);	
+	}
 
 	return 0;
 }
@@ -166,11 +187,11 @@ void *initial_thread(void *arg)
 	int shmid;
 	int *pt;
 
-	key = ftok("proc1", 0);
-	shmid = shmget(key, 0, 0);
+	key = ftok("primes", 0); /* usa a mesma key */ 
+	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 
-	//sets pt[0] as the next prime pointer to the first available position
+	//sets the next prime pointer to the first available position
 	pt[0]=1;
 
 	//sets the first prime as 2
@@ -180,7 +201,10 @@ void *initial_thread(void *arg)
 	pt[0] = pt[0] + 1;
 
 	//close the shared memory
-	shmdt(pt);
+	if (shmdt((char*)pt) == -1) {
+        perror("shmdt1");
+		exit(1);	
+	}
 
 	if(maxNumber>2) {
 		CircularQueue *q;
@@ -189,7 +213,7 @@ void *initial_thread(void *arg)
 		pthread_t filterThread;
 		pthread_create(&filterThread, NULL, filter_thread, q);
 
-		int i;
+		QueueElem i;
 		for(i=3; i<=maxNumber; i++) {
 			if(i%2 != 0) {
 				queue_put(q, i);
@@ -211,18 +235,29 @@ void *filter_thread(void *arg)
 	int shmid;
 	int *pt;
 
-	key = ftok("proc1", 0); /* usa a mesma key */ 
+	//increments the threads counter
+	threadsRunning++;
+
+	key = ftok("primes", 0); /* usa a mesma key */ 
 	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 
 	CircularQueue *q = arg;
 
+	//gets the first element of the Circular Queue that was
+	//passed as an argument
 	QueueElem first_number = queue_get(q);
 
+	//if the first element of the queue is
+	//bigger than the square root of the
+	//chosen number, the sieving is completed
+	//and all remaining numbers are primes
 	if(first_number > sqrt(maxNumber)) {
+
+		printf("-- Last Cycle Reached --\n");
 		//pushes the first element into the
 		//final primes list
-		pt[ pt[0] ] = first_number;;
+		pt[ pt[0] ] = first_number;
 		pt[0] = pt[0] + 1;
 
 		//pushes all other elements into the
@@ -238,6 +273,7 @@ void *filter_thread(void *arg)
 		queue_destroy(q);
 
 		sem_post(&primeCalculation);
+
 	} else {
 		//adds the first number to the prime list
 		//increases the next prime pointer
@@ -269,6 +305,11 @@ void *filter_thread(void *arg)
 		queue_destroy(q);
 	}
 
-	shmdt(pt);
+	if (shmdt((char*)pt) == -1) {
+        perror("shmdt1");
+		exit(1);	
+	}
+
+	threadsRunning--;
 	return NULL; 
 }
