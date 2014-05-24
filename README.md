@@ -18,6 +18,6 @@ This will generate a list of all the primes up to 100. You can go as high as you
 
 ##Known Issues
 
-Although the compilation with the provided source and Makefile works on OSX, the actual program won't run correctly on that Operating System. This is due to the fact that the usage of unnamed semaphores was required to be implemented and OSX doesn't work with those.
+Although the source file is compilable under Apple's OSX, the actual program won't run correctly on that Operating System. This is due to the fact that the usage of unnamed semaphores was a required feature and OSX doesn't implement those.
 
 Please run this under a Linux VM if you happen to be using OSX. [Vagrant](http://www.vagrantup.com/) will allow you to setup a Ubuntu Server VM with little to no effort.

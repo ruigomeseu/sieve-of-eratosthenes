@@ -22,6 +22,8 @@ sem_t primeCalculation;
 int maxNumber = 0;
 int threadsRunning = 0;
 
+pthread_mutex_t sharedMemoryMutex;
+
 void *initial_thread(void *arg);
 void *filter_thread(void *arg);
 
@@ -125,7 +127,7 @@ int main(int argc, char *argv[]) {
 	char *data;
 
 	//allocates the required space on a shared memory segment
-	key = ftok("primes", 0);
+	key = ftok("primesMemory", 0);
 	if ((shmid = shmget(key, neededSpaceAproximation, IPC_CREAT | IPC_EXCL | SHM_R | SHM_W)) == -1) {
     	perror("shmget");
     	exit(1);
@@ -138,17 +140,13 @@ int main(int argc, char *argv[]) {
     	exit(1);
     }
 
-    //reset the shared memory
-    int i = 0;
-    for(i=0; i<=data[0]; i++) {
-		data[i] = 0;
-	}
-
 	//closes the pointer
     if (shmdt((char*)data) == -1) {
         perror("shmdt1");
 		exit(1);	
 	}
+
+	pthread_mutex_init(&sharedMemoryMutex, NULL);
 
 	//creates the initial thread
 	pthread_t initialThread;
@@ -158,10 +156,11 @@ int main(int argc, char *argv[]) {
 	sem_wait(&primeCalculation);
 
 	int *pt;
-	key = ftok("primes", 0); /* usa a mesma key */ 
+	key = ftok("primesMemory", 0); /* usa a mesma key */ 
 	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 	
+	int i;
 	printf("All calculated primes up to %d: \n\n", maxNumber);
 	for(i=0; i<=pt[0]; i++) {
 		printf("%d\n", pt[i]);
@@ -187,7 +186,7 @@ void *initial_thread(void *arg)
 	int shmid;
 	int *pt;
 
-	key = ftok("primes", 0); /* usa a mesma key */ 
+	key = ftok("primesMemory", 0); /* usa a mesma key */ 
 	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 
@@ -238,7 +237,7 @@ void *filter_thread(void *arg)
 	//increments the threads counter
 	threadsRunning++;
 
-	key = ftok("primes", 0); /* usa a mesma key */ 
+	key = ftok("primesMemory", 0); /* usa a mesma key */ 
 	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
 	pt = (int *) shmat(shmid, 0, 0);
 
@@ -254,15 +253,21 @@ void *filter_thread(void *arg)
 	//and all remaining numbers are primes
 	if(first_number > sqrt(maxNumber)) {
 
-		printf("-- Last Cycle Reached --\n");
+		printf("-- Last Cycle Reached || threadsRunning = %d -- \n", threadsRunning);
 		//pushes the first element into the
 		//final primes list
+		pthread_mutex_lock(&sharedMemoryMutex);
 		pt[ pt[0] ] = first_number;
 		pt[0] = pt[0] + 1;
+		pthread_mutex_unlock(&sharedMemoryMutex);
 
 		//pushes all other elements into the
 		//final primes list
 		QueueElem i = queue_get(q);
+		/*do {
+			printf("Waiting...\n");
+			printf("threadsRunning = %d\n", threadsRunning);
+		} while(threadsRunning>1);*/
 		while(i != 0) {
 			pt[ pt[0] ] = i;
 			pt[0] = pt[0] + 1;
@@ -277,9 +282,11 @@ void *filter_thread(void *arg)
 	} else {
 		//adds the first number to the prime list
 		//increases the next prime pointer
-
+		pthread_mutex_lock(&sharedMemoryMutex);
 		pt[ pt[0] ] = first_number;
 		pt[0] = pt[0] + 1;
+		pthread_mutex_unlock(&sharedMemoryMutex);
+
 		CircularQueue *processQueue;
 		queue_init(&processQueue,QUEUE_SIZE);
 
@@ -310,6 +317,7 @@ void *filter_thread(void *arg)
 		exit(1);	
 	}
 
-	threadsRunning--;
+	printf("Decrementing, threads Running = %d\n", threadsRunning);
+	threadsRunning = threadsRunning -1;
 	return NULL; 
 }
