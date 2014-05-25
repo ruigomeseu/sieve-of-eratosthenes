@@ -5,16 +5,16 @@ An implementation of the [Erastothene's Sieve](http://en.wikipedia.org/wiki/Siev
 
 ##Features
 
-+ Threads for faster computation and multiple numbers exclusion
-+ Semaphores and Mutexes for synchronization between the threads
-+ Usage of Shared Memory for storing the primes from all threads
++ Threads for faster computation and simultaneous number sieving
++ Semaphores and Mutexes for synchronization between threads
++ Shared Memory for parallel storing of the final primes
 
 ##Usage
-Compile primes.c using the Makefile and run it according to the following example:
+Compile primes.c using the Makefile and run it d to the following example:
 
-> ./primes 100
+> ./primes &lt;number&gt;
 
-This will generate a list of all the primes up to 100. You can go as high as you want. Expect a few seconds of runtime with numbers higher than 1M.
+This will generate a list of all the primes up to the chosen &lt;number&gt;. You can go as high as you want. Expect a few seconds of runtime with numbers higher than 1M.
 
 ##Known Issues
 
