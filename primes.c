@@ -10,22 +10,30 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#define SHARED 0 /* sem. is shared between threads */ 
 #define QUEUE_SIZE 10
 
-//------------------------------------------------------------------------------------------ 
-// Type of the circular queue elements 
+//Type of the circular queue elements 
 typedef unsigned long QueueElem;
 
+//semaphore for sinalizing the prime calculation end
 sem_t primeCalculation;
 
+//number chosen by the user, primes calculated up to this value
 int maxNumber = 0;
+
+//number of active threads
 int threadsRunning = 0;
+
+//pointer to the first available position in the
+//final primes array
 int arrayPointer = 0;
 
+//mutexes for managing the writing in the shared memory
+//and the number of threads counter
 pthread_mutex_t sharedMemoryMutex;
 pthread_mutex_t threadsRunningMutex;
 
+//prototypes
 void *initial_thread(void *arg);
 void *filter_thread(void *arg);
 int compareFunction(const void * a, const void * b);
@@ -163,6 +171,7 @@ int main(int argc, char *argv[]) {
 	shmid = shmget(key, 0, 0); 
 	pt = (int *) shmat(shmid, 0, 0);
 	
+	//sorts the final primes array
 	qsort(pt,arrayPointer,sizeof(int),compareFunction);	
 
 	int i;
@@ -177,6 +186,7 @@ int main(int argc, char *argv[]) {
 		exit(1);	
 	}
 
+	//detaches the pointer from the shared memory segment
 	if (shmdt((char*)pt) == -1) {
         perror("shmdt1");
 		exit(1);	
@@ -217,6 +227,7 @@ void *initial_thread(void *arg)
 		pthread_t filterThread;
 		pthread_create(&filterThread, NULL, filter_thread, q);
 
+		//fills in the first filtering queue with odd numbers
 		QueueElem i;
 		for(i=3; i<=maxNumber; i++) {
 			if(i%2 != 0) {
@@ -303,6 +314,9 @@ void *filter_thread(void *arg)
 
 		QueueElem i = queue_get(q);
 
+		//the next filtering queue is filled with
+		//all numbers except the multiples of the
+		//prime calculated in this filtering thread
 		while(i != 0) {
 			if(i%first_number != 0) {
 				queue_put(processQueue, i);
