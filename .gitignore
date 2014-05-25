@@ -13,6 +13,7 @@
 *.so
 *.so.*
 *.dylib
+primesMemory
 
 # Executables
 *.exe
