@@ -21,12 +21,14 @@ sem_t primeCalculation;
 
 int maxNumber = 0;
 int threadsRunning = 0;
+int arrayPointer = 0;
 
 pthread_mutex_t sharedMemoryMutex;
+pthread_mutex_t threadsRunningMutex;
 
 void *initial_thread(void *arg);
 void *filter_thread(void *arg);
-
+int compareFunction(const void * a, const void * b);
  
 //------------------------------------------------------------------------------------------ 
 // Struct for representing a "circular queue" 
@@ -117,8 +119,8 @@ int main(int argc, char *argv[]) {
 
 	maxNumber = strtol(argv[1], NULL, 0);
 
-	double neededSpace = 1.2 * (maxNumber / log(maxNumber)) + 1;
-	long neededSpaceAproximation = ceil(neededSpace);
+	double neededSpace = 1.2 * (maxNumber / log(maxNumber));
+	long neededSpaceAproximation = ceil(neededSpace) + 1;
 
 	sem_init(&primeCalculation, 0, 0); 
 
@@ -128,7 +130,7 @@ int main(int argc, char *argv[]) {
 
 	//allocates the required space on a shared memory segment
 	key = ftok("primesMemory", 0);
-	if ((shmid = shmget(key, neededSpaceAproximation, IPC_CREAT | IPC_EXCL | SHM_R | SHM_W)) == -1) {
+	if ((shmid = shmget(key, sizeof(QueueElem)*neededSpaceAproximation, IPC_CREAT | IPC_EXCL | SHM_R | SHM_W)) == -1) {
     	perror("shmget");
     	exit(1);
     }
@@ -147,22 +149,25 @@ int main(int argc, char *argv[]) {
 	}
 
 	pthread_mutex_init(&sharedMemoryMutex, NULL);
+	pthread_mutex_init(&threadsRunningMutex, NULL);
 
 	//creates the initial thread
 	pthread_t initialThread;
 	pthread_create(&initialThread, NULL, initial_thread, NULL);
-	pthread_join(initialThread, NULL); 
+	////pthread_join(initialThread, NULL); 
 
 	sem_wait(&primeCalculation);
 
 	int *pt;
-	key = ftok("primesMemory", 0); /* usa a mesma key */ 
-	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
+	key = ftok("primesMemory", 0); /* uses the same key */ 
+	shmid = shmget(key, 0, 0); 
 	pt = (int *) shmat(shmid, 0, 0);
 	
+	qsort(pt,arrayPointer,sizeof(int),compareFunction);	
+
 	int i;
 	printf("All calculated primes up to %d: \n\n", maxNumber);
-	for(i=0; i<=pt[0]; i++) {
+	for(i=0; i<arrayPointer; i++) {
 		printf("%d\n", pt[i]);
 	}
 
@@ -186,18 +191,18 @@ void *initial_thread(void *arg)
 	int shmid;
 	int *pt;
 
-	key = ftok("primesMemory", 0); /* usa a mesma key */ 
-	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
+	key = ftok("primesMemory", 0); /* uses the same key */ 
+	shmid = shmget(key, 0, 0); 
 	pt = (int *) shmat(shmid, 0, 0);
 
 	//sets the next prime pointer to the first available position
-	pt[0]=1;
+	arrayPointer=0;
 
 	//sets the first prime as 2
-	pt[ pt[0] ] = 2;
+	pt[ arrayPointer ] = 2;
 
 	//increments the pointer
-	pt[0] = pt[0] + 1;
+	arrayPointer++;
 
 	//close the shared memory
 	if (shmdt((char*)pt) == -1) {
@@ -220,7 +225,7 @@ void *initial_thread(void *arg)
 		}
 		queue_put(q, 0);
 
-		pthread_join(filterThread, NULL);
+		//pthread_join(filterThread, NULL);
 	} else {
 		sem_post(&primeCalculation);
 	}
@@ -235,10 +240,12 @@ void *filter_thread(void *arg)
 	int *pt;
 
 	//increments the threads counter
+	pthread_mutex_lock(&threadsRunningMutex);
 	threadsRunning++;
+	pthread_mutex_unlock(&threadsRunningMutex);
 
-	key = ftok("primesMemory", 0); /* usa a mesma key */ 
-	shmid = shmget(key, 0, 0); /* não cria, apenas utiliza */ 
+	key = ftok("primesMemory", 0); /* uses the same key */ 
+	shmid = shmget(key, 0, 0); 
 	pt = (int *) shmat(shmid, 0, 0);
 
 	CircularQueue *q = arg;
@@ -252,39 +259,40 @@ void *filter_thread(void *arg)
 	//chosen number, the sieving is completed
 	//and all remaining numbers are primes
 	if(first_number > sqrt(maxNumber)) {
-
-		printf("-- Last Cycle Reached || threadsRunning = %d -- \n", threadsRunning);
+		
 		//pushes the first element into the
 		//final primes list
 		pthread_mutex_lock(&sharedMemoryMutex);
-		pt[ pt[0] ] = first_number;
-		pt[0] = pt[0] + 1;
+		pt[ arrayPointer ] = first_number;
+		arrayPointer++;
 		pthread_mutex_unlock(&sharedMemoryMutex);
 
 		//pushes all other elements into the
 		//final primes list
 		QueueElem i = queue_get(q);
-		/*do {
-			printf("Waiting...\n");
-			printf("threadsRunning = %d\n", threadsRunning);
-		} while(threadsRunning>1);*/
+		
 		while(i != 0) {
-			pt[ pt[0] ] = i;
-			pt[0] = pt[0] + 1;
+			pthread_mutex_lock(&sharedMemoryMutex);
+			pt[ arrayPointer ] = i;
+			arrayPointer++;
+			pthread_mutex_unlock(&sharedMemoryMutex);
 
 			i = queue_get(q);
 		}
 
 		queue_destroy(q);
-
+		do {
+			printf("Waiting...\n");
+			printf("threadsRunning = %d\n", threadsRunning);
+		} while(threadsRunning>1);
 		sem_post(&primeCalculation);
 
 	} else {
 		//adds the first number to the prime list
 		//increases the next prime pointer
 		pthread_mutex_lock(&sharedMemoryMutex);
-		pt[ pt[0] ] = first_number;
-		pt[0] = pt[0] + 1;
+		pt[ arrayPointer ] = first_number;
+		arrayPointer++;
 		pthread_mutex_unlock(&sharedMemoryMutex);
 
 		CircularQueue *processQueue;
@@ -299,16 +307,12 @@ void *filter_thread(void *arg)
 			if(i%first_number != 0) {
 				queue_put(processQueue, i);
 			}
-
 			i = queue_get(q);
 		}
 
 		queue_put(processQueue, 0);
 
-		pthread_join(filterThread, NULL);
-
-		
-
+		//pthread_join(filterThread, NULL);
 		queue_destroy(q);
 	}
 
@@ -317,7 +321,13 @@ void *filter_thread(void *arg)
 		exit(1);	
 	}
 
-	printf("Decrementing, threads Running = %d\n", threadsRunning);
-	threadsRunning = threadsRunning -1;
+	pthread_mutex_lock(&threadsRunningMutex);
+	threadsRunning--;
+	pthread_mutex_unlock(&threadsRunningMutex);
 	return NULL; 
+}
+
+int compareFunction(const void * a, const void * b)
+{
+   return ( *(int*)a - *(int*)b );
 }
