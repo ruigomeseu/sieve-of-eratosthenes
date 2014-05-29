@@ -10,7 +10,7 @@ An implementation of the [Erastothene's Sieve](http://en.wikipedia.org/wiki/Siev
 + Shared Memory for parallel storing of the final primes
 
 ##Usage
-Compile primes.c using the Makefile and run it d to the following example:
+Compile primes.c using the Makefile and run it accordingly to the following example:
 
 > ./primes &lt;number&gt;
 

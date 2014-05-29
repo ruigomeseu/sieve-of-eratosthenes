@@ -175,13 +175,13 @@ int main(int argc, char *argv[]) {
 	qsort(pt,arrayPointer,sizeof(int),compareFunction);	
 
 	int i;
-	printf("All calculated primes up to %d: \n\n", maxNumber);
+	printf("%d calculated primes up to %d: \n\n", arrayPointer, maxNumber);
 	for(i=0; i<arrayPointer; i++) {
 		printf("%d\n", pt[i]);
 	}
 
 	//clears the shared memory segment
-	if (shmctl (shmid, IPC_RMID, 0)) {
+	if (shmctl(shmid, IPC_RMID, 0)) {
         perror("shmctl");
 		exit(1);	
 	}
@@ -292,10 +292,10 @@ void *filter_thread(void *arg)
 		}
 
 		queue_destroy(q);
-		do {
+		while(threadsRunning>1) {
 			printf("Waiting...\n");
 			printf("threadsRunning = %d\n", threadsRunning);
-		} while(threadsRunning>1);
+		}
 		sem_post(&primeCalculation);
 
 	} else {
